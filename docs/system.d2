@@ -1,0 +1,81 @@
+# outdated-inject-py — system overview
+# The minimise-maximise focus watcher, rewritten to live inside SoF: a launcher
+# starts a mayhem-based Python injector, which loads CPython into the game and
+# runs the watcher there.
+# Zones run left to right: entry points -> core -> state -> external.
+# Style classes set strokes only, so light and dark stay readable.
+
+title: |md
+  # outdated-inject-py
+  A Python injector that loads CPython into SoF and runs the minimise-maximise focus watcher inside the game process.
+| {near: top-center}
+
+direction: right
+grid-columns: 2
+grid-rows: 2
+horizontal-gap: 150
+vertical-gap: 110
+
+entry: Entry points {
+  direction: down
+
+  sh: `launch.sh` · sets `PYTHONPATH` to a mayhem checkout, runs `test.py` with two args
+  cli: `test.py script procname` · the injector, must run on Windows only
+  dll: `pythonXY.dll` · found for the host interpreter, must match the game's bitness
+}
+
+core: Core {
+  direction: down
+
+  pid: find the game · `EnumProcesses` in a growing array, match the image basename exactly
+  open: open the process · mayhem `WindowsProcess(pid)`, retried every second until it appears
+  load: load CPython · `load_library` on the dll, then compute remote addresses
+  addr: resolve remote addresses · remote base plus the local export offset
+  init: start Python · remote thread on `Py_InitializeEx`, joined before anything else
+  stub: write the stub · `runpy.run_path` with run name `__mayhem__`, then `ExitThread`
+  pipe: hand over · named pipe `mayhem`, write `640x480`, close, join the thread
+  boot: payload starts · reads the desktop size file, opens the pipe as a client
+  watch: focus watcher · same hooks and same two branches as `minimise-maximise`
+
+  pid -> open: a handle per candidate pid
+  open -> load: a handle is required first
+  load -> addr: the module base comes back from the load
+  addr -> init: two export addresses, computed, not searched
+  init -> stub: the interpreter must exist before code runs
+  stub -> pipe: the stub connects back or the injector waits
+  pipe -> boot: the server writes, the payload reads once
+  boot -> watch: payload owns the hook from here
+}
+
+state: State {
+  direction: down
+
+  desk: `sofplus/data/mm_desktop_res` · desktop size the payload restores to {shape: cylinder}
+  res: `sofplus/data/mm_res` · game size, written by an addon this repo does not ship {shape: cylinder}
+  mem: payload globals · `sofId`, `resizedDesktop` flag, `origResSof`
+}
+
+ext: External {
+  direction: down
+
+  win32: window calls · `EnumWindows`, `GetWindowPlacement`, `ShowWindow`
+  display: display calls · `GetSystemMetrics`, `ChangeDisplaySettings`, `DEVMODEType`
+  game: SoF.exe · the injected host, owns the window titled `SoF`
+  mayhem: mayhem · process handles, `WriteFile` and thread calls, Python stub template
+}
+
+entry -> core: the launcher only picks the script and the process
+core -> state: one file in, one file out, both under the game's user folder
+core -> ext: the game is the host and Windows is the trigger
+
+classes: {
+  entry: {style: {stroke: "#2f6fbf"}}
+  core: {style: {stroke: "#2f8f5f"}}
+  state: {style: {stroke: "#a86a12"; stroke-dash: 3}}
+  ext: {style: {stroke: "#8a4fbf"; stroke-dash: 5}}
+}
+
+entry.class: entry
+core.class: core
+state.class: state
+ext.class: ext
